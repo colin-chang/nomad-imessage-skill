@@ -1,6 +1,6 @@
 ---
-name: imessage-nomad
-description: "通过 imsg Bridge Daemon（JSON-RPC over TCP）发送 iMessage/SMS。解决 macOS Full Disk Access 限制，提供可靠的送达确认。"
+name: nomad-imessage
+description: "🧩 macOS 通用 Agent Skill — 通过 imsg Bridge Daemon（JSON-RPC over TCP）让任何 AI Agent 获得 iMessage/SMS 发送能力。解决 macOS Full Disk Access 限制，提供可靠的送达确认。适用于 Hermes Agent、Claude Code、OpenCode、Codex 及任何 macOS 自动化脚本。"
 version: 4.0.0
 license: MIT
 platforms: [macos]
@@ -10,6 +10,9 @@ prerequisites:
 ---
 
 # iMessage Bridge — 通过 TCP 桥接发送 iMessage
+
+> 🧩 **macOS 通用 Agent Skill** — 平台无关，任何能跑 Python 的 AI Agent 均可使用。
+> 核心机制：imsg Bridge Daemon（socat + JSON-RPC over TCP），继承 Terminal.app 的 FDA 权限链。
 
 通过 **imsg Bridge Daemon**（socat + JSON-RPC over TCP）发送 iMessage/SMS，
 具备可靠的送达确认（数据库级 `guid` 验证）。

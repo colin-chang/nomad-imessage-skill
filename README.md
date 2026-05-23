@@ -1,4 +1,4 @@
-# imessage-nomad
+# nomad-imessage
 
 > 🧩 **macOS AI Agent Skill** — give any AI agent the ability to send iMessage/SMS via JSON-RPC over TCP, with reliable delivery confirmation.
 >
@@ -14,7 +14,7 @@
 
 ## What is this?
 
-**imessage-nomad** is a **macOS Agent Skill** — a self-contained module that any AI agent or automation script can use to send iMessage/SMS on macOS.
+**nomad-imessage** is a **macOS Agent Skill** — a self-contained module that any AI agent or automation script can use to send iMessage/SMS on macOS.
 
 It solves a fundamental macOS limitation: AI agents and automation scripts (Python/Node processes) **cannot** be granted Full Disk Access (FDA) on macOS — only `.app` bundles can. Without FDA, they can't read `~/Library/Messages/chat.db`, the iMessage database.
 
@@ -71,7 +71,7 @@ payload = json.dumps({
     'method': 'send',
     'params': {
         'to': 'recipient@example.com',
-        'text': 'Hello from imessage-nomad!'
+        'text': 'Hello from nomad-imessage!'
     }
 }) + '\n'
 
