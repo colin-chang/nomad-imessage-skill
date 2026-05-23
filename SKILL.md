@@ -250,3 +250,4 @@ tmux has-session -t imsg-bridge 2>/dev/null || {
 - [LaunchAgent 部署指南](references/imsg-bridge-launchagent.md)
 - [Hermes Agent 集成指南](references/hermes/hermes-integration.md)
 - [Hermes Cron 发送模式](references/hermes/cron-delivery-pattern.md)
+- [开源发布清单](references/release-checklist.md)

@@ -1,9 +1,12 @@
 # imessage-nomad
 
-> iMessage Bridge Daemon — 通过 JSON-RPC over TCP 发送 iMessage/SMS，具备可靠的送达确认。
+> 🧩 **macOS AI Agent Skill** — 让任何 AI Agent 在 macOS 上获得发送 iMessage/SMS 的能力，通过 JSON-RPC over TCP，具备可靠的送达确认。
+>
+> 适用于 **Hermes Agent**、**Claude Code**、**OpenCode**、**Codex**，或任何运行在 macOS 上的自动化脚本。
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Skill](https://img.shields.io/badge/type-Agent%20Skill-blue)](SKILL.md)
 [![Platform: macOS](https://img.shields.io/badge/platform-macOS-lightgrey.svg)]()
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 ---
 
@@ -11,9 +14,11 @@
 
 ## 这是什么？
 
-**imessage-nomad** 解决 macOS 一个底层限制：AI Agent 和自动化脚本（Python/Node 进程）**无法**被授予"完全磁盘访问"权限（FDA）——macOS 只允许 `.app` bundle 加入 FDA 白名单。没有 FDA 就无法读取 `~/Library/Messages/chat.db`（iMessage 数据库）。
+**imessage-nomad** 是一个 **macOS Agent Skill**——一个自包含的功能模块，任何 AI Agent 或自动化脚本都可以用它来在 macOS 上发送 iMessage/SMS。
 
-本项目提供一个 **TCP 桥接守护进程**，通过 Terminal.app 进程链继承 FDA。你的自动化代码只需向 `localhost:8899` 发 JSON-RPC 调用，bridge 负责一切，并通过数据库级 `guid` 验证提供可靠的送达确认。
+它解决 macOS 一个底层限制：AI Agent 和自动化脚本（Python/Node 进程）**无法**被授予"完全磁盘访问"权限（FDA）——macOS 只允许 `.app` bundle 加入 FDA 白名单。没有 FDA 就无法读取 `~/Library/Messages/chat.db`（iMessage 数据库）。
+
+本 Skill 提供一个 **TCP 桥接守护进程**，通过 Terminal.app 进程链继承 FDA。你的 Agent 只需向 `localhost:8899` 发 JSON-RPC 调用，bridge 负责一切，并通过数据库级 `guid` 验证提供可靠的送达确认。
 
 ## 架构
 
@@ -151,6 +156,18 @@ macOS 的 `nc` 在读取完 stdin EOF 后立即关闭连接，JSON-RPC 响应被
 - **仅 macOS** — 需要 Messages.app 和 `chat.db`
 - 已在 macOS 15 (Sequoia) 测试，应兼容 macOS 13+
 - `imsg` CLI 通过 Homebrew 安装（`steipete/tap/imsg`）
+
+## Agent 兼容性
+
+本 Skill **与 Agent 平台无关**——它通过标准 TCP socket（`localhost:8899`）通信。任何能跑 Python 的 Agent 平台都能用：
+
+| Agent / 平台 | 集成方式 |
+|-------------|---------|
+| **Hermes Agent** | 原生 Skill — 详见 [`references/hermes/`](references/hermes/) |
+| **Claude Code** | 添加到 `CLAUDE.md`，通过 `terminal` 或自定义 hook 调用 |
+| **OpenCode / Codex** | 添加到项目指令，通过 Python 子进程调用 |
+| **任何 Python 脚本** | `import socket` → `connect(('127.0.0.1', 8899))` |
+| **Shell 脚本** | 用 Python socket 代码段包装成辅助函数 |
 
 ## 许可证
 

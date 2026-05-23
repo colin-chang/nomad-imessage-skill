@@ -1,9 +1,12 @@
 # imessage-nomad
 
-> iMessage Bridge Daemon — send iMessage/SMS via JSON-RPC over TCP, with reliable delivery confirmation.
+> 🧩 **macOS AI Agent Skill** — give any AI agent the ability to send iMessage/SMS via JSON-RPC over TCP, with reliable delivery confirmation.
+>
+> Works with **Hermes Agent**, **Claude Code**, **OpenCode**, **Codex**, or any automation script running on macOS.
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Skill](https://img.shields.io/badge/type-Agent%20Skill-blue)](SKILL.md)
 [![Platform: macOS](https://img.shields.io/badge/platform-macOS-lightgrey.svg)]()
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 ---
 
@@ -11,9 +14,11 @@
 
 ## What is this?
 
-**imessage-nomad** solves a fundamental macOS limitation: AI agents and automation scripts (Python/Node processes) **cannot** be granted Full Disk Access (FDA) on macOS — only `.app` bundles can. Without FDA, they can't read `~/Library/Messages/chat.db`, the iMessage database.
+**imessage-nomad** is a **macOS Agent Skill** — a self-contained module that any AI agent or automation script can use to send iMessage/SMS on macOS.
 
-This project provides a **TCP bridge daemon** that inherits FDA through a Terminal.app process chain. Your automation code sends JSON-RPC calls to `localhost:8899`, and the bridge handles everything with proper delivery confirmation via database-level `guid` verification.
+It solves a fundamental macOS limitation: AI agents and automation scripts (Python/Node processes) **cannot** be granted Full Disk Access (FDA) on macOS — only `.app` bundles can. Without FDA, they can't read `~/Library/Messages/chat.db`, the iMessage database.
+
+This Skill provides a **TCP bridge daemon** that inherits FDA through a Terminal.app process chain. Your agent sends JSON-RPC calls to `localhost:8899`, and the bridge handles everything with proper delivery confirmation via database-level `guid` verification.
 
 ## Architecture
 
@@ -155,6 +160,18 @@ but the message was already sent. Then you retry. Now the recipient has duplicat
 - **macOS only** — requires Messages.app and `chat.db`
 - Tested on macOS 15 (Sequoia), should work on macOS 13+
 - `imsg` CLI via Homebrew (`steipete/tap/imsg`)
+
+## Agent Compatibility
+
+This Skill is **agent-agnostic** — it communicates via a standard TCP socket at `localhost:8899`. Any agent platform that can run Python can use it:
+
+| Agent / Platform | Integration |
+|------------------|-------------|
+| **Hermes Agent** | Native Skill — see [`references/hermes/`](references/hermes/) |
+| **Claude Code** | Add to `CLAUDE.md`, invoke via `terminal` or custom hook |
+| **OpenCode / Codex** | Add to project instructions, invoke via Python subprocess |
+| **Any Python script** | `import socket` → `connect(('127.0.0.1', 8899))` |
+| **Shell scripts** | Use the Python socket snippet as a helper |
 
 ## License
 
