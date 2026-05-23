@@ -1,6 +1,4 @@
-# 发送调试指南 — 真实事故与排查路径
-
-> 来源：nomad-imessage v3.2.0 开发过程中踩过的坑
+# 发送调试指南
 
 ---
 
@@ -13,16 +11,6 @@ echo '{"jsonrpc":"2.0",...}' | nc -w 5 127.0.0.1 8899
 # 输出：空
 # exit：0
 # 结果：对方收到了消息
-```
-
-### 为什么会重试 4 次
-
-```
-nc 空响应 → agent 判定"失败" → 重试
-  → nc 空响应 → agent 再次判定"失败" → 重试
-    → nc 空响应 → agent 再次判定"失败" → 重试
-      → nc 空响应 → agent 放弃
-结果：4 条相同消息全部送达
 ```
 
 ### 根因
@@ -48,7 +36,7 @@ macOS 的 `nc` 与 Linux 的 `nc` 行为不同，且 macOS 版本不支持 `-q` 
 
 ---
 
-## 场景二：Shell `|| &&` 优先级导致 ConnectionRefusedError
+## 场景二：Shell `|| &&` 优先级导致发送失败
 
 ### 现象
 
@@ -68,14 +56,6 @@ tmux has-session || (open ... && sleep 2 && nc ...)
 # Shell 实际执行：
 (tmux has-session || open ...) && sleep 2 && nc ...
 ```
-
-当 `tmux has-session` 失败、`open` 成功后：
-- `open` 的退出码 ≠ 0 → `&& sleep 2 && nc ...` 被跳过
-- bridge 已启动但消息没发
-
-当 `tmux has-session` 成功、`open` 跳过时：
-- `||` 短路，但 `sleep 2 && nc` 仍然执行
-- 但此时 bridge 已经在监听，`nc` 应该成功——但 nc 发送后立即断连，响应丢失
 
 ### 修复
 
