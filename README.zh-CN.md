@@ -7,6 +7,7 @@
 [![Skill](https://img.shields.io/badge/type-Agent%20Skill-blue)](SKILL.md)
 [![Platform: macOS](https://img.shields.io/badge/platform-macOS-lightgrey.svg)]()
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![GitHub Release](https://img.shields.io/github/v/release/colin-chang/nomad-imessage-skill)](https://github.com/colin-chang/nomad-imessage-skill/releases)
 
 ---
 
