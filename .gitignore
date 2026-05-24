@@ -20,3 +20,6 @@ __pycache__/
 /tmp/
 *.tmp
 *.swp
+
+# Local config (contains personal chat IDs, contacts)
+**/*.local.md
