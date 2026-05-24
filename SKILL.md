@@ -1,7 +1,7 @@
 ---
 name: nomad-imessage
 description: "🧩 macOS 通用 Agent Skill — 通过 imsg Bridge Daemon（JSON-RPC over TCP）让任何 AI Agent 获得 iMessage/SMS 发送能力。解决 macOS Full Disk Access 限制，提供可靠的送达确认。适用于 Hermes Agent、Claude Code、OpenCode、Codex 及任何 macOS 自动化脚本。"
-version: 4.0.0
+version: 1.1.0
 license: MIT
 platforms: [macos]
 tags: [iMessage, SMS, messaging, macOS, Apple, bridge, FDA]
@@ -149,13 +149,92 @@ s.close()
 
 | 方法 | 用途 |
 |------|------|
-| `send` | 发送文本/文件 |
-| `chats.list` | 列出最近对话 |
+| `send` | 发送文本/文件（支持 `to` 单人 + `chat_id` 群组两种目标） |
+| `chats.list` | 列出最近对话（含群组，群聊特征 `participants.length > 1`） |
 | `messages.history` | 查聊天历史 |
 | `watch.subscribe` | 实时监听新消息 |
 | `react` | Tapback 快捷回复 |
 
 协议文档：https://imsg.sh/rpc.html
+
+## 发送到群组
+
+`imsg` **支持向已存在的群组发送消息**，但不能创建新群组。通过 `chat_id` 目标模式实现。
+
+> 💡 **快速查群组 chat_id**：直接在 Terminal 跑 `imsg chats list`，方括号里的数字就是 `chat_id`。
+> 发送必须走 JSON-RPC bridge，不要用 `imsg send` CLI（会绕过 bridge 架构，且 `imsg` 二进制需 FDA）。
+
+### Step 1：获取群组 chat_id
+
+通过 bridge 的 `chats.list`，群聊特征是 `participants.length > 1`：
+
+```python
+import socket, json, time
+
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.settimeout(5)
+s.connect(('127.0.0.1', 8899))
+s.sendall((json.dumps({
+    'jsonrpc': '2.0', 'id': '1', 'method': 'chats.list',
+    'params': {'limit': 30}
+}) + '\n').encode())
+time.sleep(1.5)
+
+buf = b''
+while True:
+    try:
+        d = s.recv(8192)
+        if not d: break
+        buf += d
+    except socket.timeout: break
+s.close()
+
+data = json.loads(buf.decode())
+for c in data['result']['chats']:
+    p = c.get('participants', [])
+    cid = c.get('chat_id')
+    name = c.get('display_name', '?')
+    handles = [x.get('handle', '?') for x in p]
+    if len(p) > 1:
+        print(f'[GROUP] chat_id={cid}  "{name}"  → {handles}')
+```
+
+### Step 2：用 `chat_id` 通过 bridge 发送
+
+```python
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.settimeout(10)
+s.connect(('127.0.0.1', 8899))
+s.sendall((json.dumps({
+    'jsonrpc': '2.0', 'id': '2', 'method': 'send',
+    'params': {
+        'chat_id': 12,              # ← 群组 chat_id
+        'text': '大家好，这是一条群发消息'
+    }
+}) + '\n').encode())
+time.sleep(1)
+
+try:
+    resp = s.recv(4096).decode()
+    print(resp)
+except socket.timeout:
+    print('TIMEOUT — 消息通常已发出，严禁重试')
+s.close()
+```
+
+> ⚠️ **transport 说明**：默认 `transport: "auto"`，优先 IMCore bridge → 回退 AppleScript。
+> `transport: "bridge"` 需要 **关闭 SIP**（`imsg launch` 注入 Messages.app），普通用户无需指定。
+> SIP 开启时 AppleScript 是唯一可用 transport，不影响消息送达。
+
+### 两种发送模式对比
+
+| 模式 | 参数 | 适用场景 | 能否群发 |
+|------|------|---------|---------|
+| Direct send | `to`（单人邮箱/号码） | 一对一私聊 | ❌ |
+| Chat target | `chat_id` / `chat_identifier` / `chat_guid` | 已有对话（含群组） | ✅ |
+
+> ⚠️ **限制**：`imsg` 不能创建新群组，只能往 Messages.app 中已有的群聊发送。
+> 群聊的 `chat_id` 是稳定的整数，找到后可以记下来直接复用，无需每次 `chats.list`。
 
 ## 配置收件人
 
@@ -196,6 +275,7 @@ tmux kill-session -t imsg-bridge
 | `ConnectionRefusedError` | bridge 未启动 | `open <SKILL_DIR>/references/imsg-bridge.command` |
 | `ConnectionRefusedError` 持续 | tmux 会话被杀 | 检查 `pgrep -f "imsg rpc"`，重新启动 bridge |
 | `permission denied (code: 23)` | 终端没有 FDA | 给 Terminal.app 加 FDA |
+| `permission denied` 且 bridge 是 tmux 直接启动的 | FDA 链断裂：Hermes 终端 ≠ Terminal.app | 必须用 `open .command` 启动，不能直接 `tmux new-session` |
 | `socat: command not found` | socat 未装 | `brew install socat` |
 | `imsg: command not found` | imsg 未装 | `brew install steipete/tap/imsg` |
 | 返回 `ok` 有 `guid` 但对方没收到 | Messages.app 未登录 | 确认 Messages.app 已登录 iMessage |
@@ -253,3 +333,4 @@ tmux has-session -t imsg-bridge 2>/dev/null || {
 - [LaunchAgent 部署指南](references/imsg-bridge-launchagent.md)
 - [Hermes Agent 集成指南](references/hermes/hermes-integration.md)
 - [Hermes Cron 发送模式](references/hermes/cron-delivery-pattern.md)
+- [群聊 chat_id 查询脚本](scripts/list-group-chats.py) — 一键列出所有群组及 chat_id
