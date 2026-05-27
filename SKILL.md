@@ -2,9 +2,12 @@
 name: nomad-imessage
 description: "🧩 macOS 通用 Agent Skill — 通过 imsg Bridge Daemon（JSON-RPC over TCP）让任何 AI Agent 获得 iMessage/SMS 发送能力。解决 macOS Full Disk Access 限制，提供可靠的送达确认。适用于 Hermes Agent、Claude Code、OpenCode、Codex 及任何 macOS 自动化脚本。"
 version: 1.1.0
+author: Colin Chang
 license: MIT
 platforms: [macos]
-tags: [iMessage, SMS, messaging, macOS, Apple, bridge, FDA]
+metadata:
+  hermes:
+    tags: [iMessage, SMS, messaging, macOS, Apple, bridge, FDA]
 prerequisites:
   commands: [tmux, socat, python3, imsg]
 ---
@@ -329,6 +332,7 @@ tmux has-session -t imsg-bridge 2>/dev/null || {
 - [imsg 官方文档](https://imsg.sh/rpc.html)
 - [FDA Bridge 原理](references/imessage-fda-bridge.md)
 - [iMessage 自动化能力边界调研](references/imessage-automation-research.md)
+- [BlueBubbles 深度调研](references/bluebubbles-research.md)
 - [发送调试指南](references/send-debugging-guide.md)
 - [LaunchAgent 部署指南](references/imsg-bridge-launchagent.md)
 - [Hermes Agent 集成指南](references/hermes/hermes-integration.md)
