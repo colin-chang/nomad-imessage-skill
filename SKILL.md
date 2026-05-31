@@ -287,12 +287,12 @@ tmux kill-session -t imsg-bridge
 |------|------|------|
 | `ConnectionRefusedError` | bridge 未启动 | `open <SKILL_DIR>/references/imsg-bridge.command` |
 | `ConnectionRefusedError` 持续 | tmux 会话被杀 | 检查 `pgrep -f "imsg rpc"`，重新启动 bridge |
-| `ConnectionRefusedError`（Cron 环境） | bridge 未运行 | 先尝试 `open .command` 自动启动（Hermes 已验证可用）→ 仍失败则部署 LaunchAgent。详见 [references/hermes/cron-delivery-pattern.md](references/hermes/cron-delivery-pattern.md) |
-| `ConnectionRefusedError`（Cron 环境，bridge 已启动但仍失败） | 竞态条件：`subprocess.run(['open', …])` 异步返回，`time.sleep(3)` 在 Terminal.app 冷启动完成前到期 | **禁用 `time.sleep(N)`**（固定等待不可靠）。改用主动轮询：每秒尝试 connect 8899，最多等 15s，确认端口就绪后再发送。详见 [references/hermes/bridge-startup-race-condition.md](references/hermes/bridge-startup-race-condition.md) |
-| `ConnectionRefusedError`（Cron + LaunchAgent 已部署） | bridge 进程被杀或启动失败 | `launchctl list \| grep imsg-bridge` 检查状态，查看 `/tmp/imsg-bridge-launchd*.log`；若 exit code 非 0 则检查 socat/imsg 安装路径 |
-| `authorization denied (code: 23)`（LaunchAgent 环境） | FDA 权限链断裂（launchd 不继承 Terminal.app FDA） | `send` 走 AppleScript transport 不需要 FDA；`chats.list` 等操作需改用 `.command` 启动（Terminal.app → FDA 继承）。详见 [references/hermes/launchagent-deployment-record.md](references/hermes/launchagent-deployment-record.md) |
+| `ConnectionRefusedError`（自动化/Cron 环境） | bridge 未运行 | 在发送代码中嵌入自动启动逻辑（见下方「自包含模式」），用主动轮询替代固定 sleep |
+| `ConnectionRefusedError`（bridge 启动后仍失败） | 竞态条件：`open .command` 异步返回，固定等待时间不足以让 bridge 就绪 | 使用主动轮询：每秒尝试 connect 8899，确认端口就绪后再发送，最多等 15s |
+| `ConnectionRefusedError`（LaunchAgent 已部署） | bridge 进程被杀或启动失败 | `launchctl list \| grep imsg-bridge` 检查状态，查看 `/tmp/imsg-bridge-launchd*.log`；若 exit code 非 0 则检查 socat/imsg 安装路径 |
+| `authorization denied (code: 23)`（LaunchAgent 环境） | FDA 权限链断裂（launchd 不继承 Terminal.app FDA） | `send` 走 AppleScript transport 不需要 FDA；`chats.list` 等操作需改用 `.command` 启动（Terminal.app → FDA 继承) |
 | `permission denied (code: 23)` | 终端没有 FDA | 给 Terminal.app 加 FDA |
-| `permission denied` 且 bridge 是 tmux 直接启动的 | FDA 链断裂：Hermes 终端 ≠ Terminal.app | 必须用 `open .command` 启动，不能直接 `tmux new-session` |
+| `permission denied` 且 bridge 是 tmux 直接启动的 | FDA 链断裂：Agent 运行环境 ≠ Terminal.app | 必须用 `open .command` 启动，不能直接 `tmux new-session` |
 | `socat: command not found` | socat 未装 | `brew install socat` |
 | `imsg: command not found` | imsg 未装 | `brew install steipete/tap/imsg` |
 | 返回 `ok` 有 `guid` 但对方没收到 | Messages.app 未登录 | 确认 Messages.app 已登录 iMessage |
@@ -323,17 +323,15 @@ echo '{"jsonrpc":"2.0",...}' | nc 127.0.0.1 8899
 
 LaunchAgent 通过 `launchd` 启动 bridge → **不继承 Terminal.app 的 FDA** → `imsg rpc` 的 `send` 方法因无法访问 `chat.db` 返回 `authorization denied (code: 23)`，即使走 AppleScript transport 也无法获取 guid 确认。
 
-详见：[LaunchAgent 部署实战记录](references/hermes/launchagent-deployment-record.md)（含事故复盘与结论）。
-
-**替代方案**：见下方 [自动化集成](#自动化集成) 中的自包含模式。
+**替代方案**：见下方 [自动化集成](#自动化集成) 中的自包含模式——bridge 检测、自动启动、发送、响应判断全部内嵌在单个 Python 函数中。
 
 ## 自动化集成
 
-### 推荐：自包含模式（一次工具调用完成全部工作）
+### 推荐：自包含模式（一次脚本调用完成全部工作）
 
-把 bridge 检测 → 自动启动 → 发送 → 响应判断**全部内嵌到一个 Python 脚本中**，单一 `execute_code` 调用完成。
+把 bridge 检测 → 自动启动 → 发送 → 响应判断**全部内嵌到一个 Python 函数中**。
 
-**为什么这样做**：部分 LLM 模型在长 prompt 末尾会跳过多步骤串行指令（已验证：`bytedance/doubao-seed-2.0-pro` 在 520 行 prompt 末尾的 "Step 1（terminal 检测/启动）→ Step 2（execute_code 发送）" 被连续多日跳过，Step 1 从未执行）。将 auto-start 嵌入 send 代码内部，消除了对 LLM 的串行执行依赖。
+**为什么这样做**：在多步骤自动化流程中，LLM 可能在长上下文末端跳过前置步骤（如"先检测 bridge 再发送"），导致 `ConnectionRefusedError`。将 auto-start 嵌入 send 代码内部，消除了对 LLM 的串行执行依赖。
 
 ```python
 import socket, json, time, subprocess
@@ -361,7 +359,7 @@ def send_imessage(to, text):
         except (ConnectionRefusedError, OSError):
             if attempt == 0:
                 # 自动启动 bridge：open .command 继承 Terminal.app FDA
-                # 注意：不能用 tmux new-session -d（Hermes 会拦截），必须用 open
+                # 注意：不能用 tmux new-session -d（可能被安全策略拦截），必须用 open
                 cmd_path = '<SKILL_DIR>/references/imsg-bridge.command'
                 subprocess.run(['open', cmd_path], check=False)
                 # 轮询等待 bridge 就绪（open 异步 + Terminal.app 冷启动 ≥3s，固定 sleep 不够）
@@ -417,10 +415,4 @@ tmux has-session -t imsg-bridge 2>/dev/null || {
 - [BlueBubbles 深度调研](references/bluebubbles-research.md)
 - [发送调试指南](references/send-debugging-guide.md)
 - [LaunchAgent 部署指南](references/imsg-bridge-launchagent.md)
-- [Hermes Agent 集成指南](references/hermes/hermes-integration.md)
-- [Hermes Cron 发送模式](references/hermes/cron-delivery-pattern.md)
-- [Hermes `open` 命令验证](references/hermes/open-command-verification.md) — 实测确认 `open .command` 在 Hermes 中可用
-- [Bridge 启动竞态条件分析](references/hermes/bridge-startup-race-condition.md) — 2026-05-31 事故复盘：`time.sleep(3)` 不可靠，必须用主动轮询
-- [Hermes Skills Hub 发布经验](references/hermes-hub-publishing.md) — 发布流程、安全扫描机制及替代方案
-- [LaunchAgent 部署实战记录](references/hermes/launchagent-deployment-record.md) — 2026-05-28 实战：Cron 推送失败 → LaunchAgent + FDA 分析
 - [群聊 chat_id 查询脚本](scripts/list-group-chats.py) — 一键列出所有群组及 chat_id
