@@ -23,3 +23,6 @@ __pycache__/
 
 # Local config (contains personal chat IDs, contacts)
 **/*.local.md
+
+# Hermes-specific integration docs (local only, not universal)
+references/hermes/
