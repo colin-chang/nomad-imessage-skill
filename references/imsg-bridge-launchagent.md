@@ -95,3 +95,23 @@ LaunchAgent 和 `.command` 手动启动**互斥且不冲突**：
 - LaunchAgent 部署后 bridge 开机即运行
 - `.command` 仍可用于手动重启或临时停止 LaunchAgent 后的手动启动
 - 若 LaunchAgent 已运行，`.command` 的 `tmux has-session` 幂等检测会自动跳过
+
+## ⚠️ FDA 权限链差异
+
+**LaunchAgent 启动的 bridge 不继承 Full Disk Access：**
+
+```
+# LaunchAgent 路径（无 FDA）
+launchd → tmux → socat → imsg rpc  ❌ 无 FDA
+  └─ chats.list / messages.history → authorization denied (code: 23)
+
+# Terminal.app 路径（有 FDA）
+Terminal.app (FDA ✅) → open .command → tmux → socat → imsg rpc ✅ 继承 FDA
+```
+
+**对业务的影响：**
+- `send` 正常 — 走 AppleScript fallback transport，不依赖 chat.db
+- `chats.list` / `messages.history` 失败 — 需要读 chat.db
+- 移民日报 cron 只做 `send`，LaunchAgent 路径完全够用
+
+**如需完整 FDA 支持**：在 macOS 登录项中添加 `open .command`，让 Terminal.app 启动的 bridge 在登录后接管 tmux session（`.command` 内置幂等检测，已存在的 session 会跳过）。

@@ -39,6 +39,7 @@ Apple 提供的两个接口都不符合需求：
 | 方案 | 需要个人 Apple ID？ | 接收方看到谁？ | 代价 |
 |------|-------------------|-------------|------|
 | imsg Bridge | ✅ 是 | 你本人 | 需部署 socat + tmux，一次配置 |
+| BlueBubbles | ✅ 是 | 你本人 | Mac 24/7 开机 + Server 应用，详见 [BlueBubbles 深度调研](bluebubbles-research.md) |
 | 第二 Apple ID + Jared | ❌ | 新账号 | 需注册第二个 ID |
 | Sendblue / blooio | ❌ | 陌生美国号码 | 付费 $25/月起 |
 | Apple Business Chat | ❌ | 企业品牌名 | 需企业资质 |
