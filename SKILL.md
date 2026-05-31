@@ -1,7 +1,7 @@
 ---
 name: nomad-imessage
 description: "🧩 macOS 通用 Agent Skill — 通过 imsg Bridge Daemon（JSON-RPC over TCP）让任何 AI Agent 获得 iMessage/SMS 发送能力。解决 macOS Full Disk Access 限制，提供可靠的送达确认。适用于 Hermes Agent、Claude Code、OpenCode、Codex 及任何 macOS 自动化脚本。"
-version: 1.1.0
+version: 1.3.0
 author: Colin Chang
 license: MIT
 platforms: [macos]
@@ -60,8 +60,7 @@ imsg rpc (FDA ✅ 继承自 Terminal.app)
 open <SKILL_DIR>/references/imsg-bridge.command
 ```
 
-> 如果已部署 LaunchAgent（推荐，开机自启），此步可跳过。
-> 详见：[references/imsg-bridge-launchagent.md](references/imsg-bridge-launchagent.md)
+> 你需要在使用前手动启动一次 bridge（Mac 重启后也需要）。自动化场景请用下方的「自包含模式」——代码内部会自动检测并启动 bridge。
 
 ### 2. 发送消息
 
@@ -239,6 +238,17 @@ s.close()
 > ⚠️ **限制**：`imsg` 不能创建新群组，只能往 Messages.app 中已有的群聊发送。
 > 群聊的 `chat_id` 是稳定的整数，找到后可以记下来直接复用，无需每次 `chats.list`。
 
+## ⚠️ 媒体发送：视频压缩警告
+
+通过 iMessage 发送视频时，**Apple 服务器会强制将视频转码为 720p**（无论源文件质量如何）。
+图片在正常大小范围内不受影响，超大图片会缩减至 2048px 长边。
+
+- iCloud Link（Photos → Share → 拷贝链接）可保留原始画质
+- AirDrop 零压缩
+- 「低质量图片模式」仅影响图片，对视频无效
+
+> 📌 **视频压缩要点**：Apple 服务器强制将视频转码为 720p，超大图片缩减至 2048px 长边。iCloud Link 和 AirDrop 可规避压缩。
+
 ## 配置收件人
 
 | 姓名 | 标识符 | 类型 |
@@ -277,6 +287,10 @@ tmux kill-session -t imsg-bridge
 |------|------|------|
 | `ConnectionRefusedError` | bridge 未启动 | `open <SKILL_DIR>/references/imsg-bridge.command` |
 | `ConnectionRefusedError` 持续 | tmux 会话被杀 | 检查 `pgrep -f "imsg rpc"`，重新启动 bridge |
+| `ConnectionRefusedError`（Cron 环境） | bridge 未运行 | 先尝试 `open .command` 自动启动（Hermes 已验证可用）→ 仍失败则部署 LaunchAgent。详见 [references/hermes/cron-delivery-pattern.md](references/hermes/cron-delivery-pattern.md) |
+| `ConnectionRefusedError`（Cron 环境，bridge 已启动但仍失败） | 竞态条件：`subprocess.run(['open', …])` 异步返回，`time.sleep(3)` 在 Terminal.app 冷启动完成前到期 | **禁用 `time.sleep(N)`**（固定等待不可靠）。改用主动轮询：每秒尝试 connect 8899，最多等 15s，确认端口就绪后再发送。详见 [references/hermes/bridge-startup-race-condition.md](references/hermes/bridge-startup-race-condition.md) |
+| `ConnectionRefusedError`（Cron + LaunchAgent 已部署） | bridge 进程被杀或启动失败 | `launchctl list \| grep imsg-bridge` 检查状态，查看 `/tmp/imsg-bridge-launchd*.log`；若 exit code 非 0 则检查 socat/imsg 安装路径 |
+| `authorization denied (code: 23)`（LaunchAgent 环境） | FDA 权限链断裂（launchd 不继承 Terminal.app FDA） | `send` 走 AppleScript transport 不需要 FDA；`chats.list` 等操作需改用 `.command` 启动（Terminal.app → FDA 继承）。详见 [references/hermes/launchagent-deployment-record.md](references/hermes/launchagent-deployment-record.md) |
 | `permission denied (code: 23)` | 终端没有 FDA | 给 Terminal.app 加 FDA |
 | `permission denied` 且 bridge 是 tmux 直接启动的 | FDA 链断裂：Hermes 终端 ≠ Terminal.app | 必须用 `open .command` 启动，不能直接 `tmux new-session` |
 | `socat: command not found` | socat 未装 | `brew install socat` |
@@ -303,14 +317,83 @@ macOS 的 `nc` 在 stdin EOF 后立即关闭连接，`imsg rpc` 的 JSON-RPC 响
 echo '{"jsonrpc":"2.0",...}' | nc 127.0.0.1 8899
 ```
 
-## LaunchAgent 部署（推荐）
+## ⛔ 已废弃：LaunchAgent 部署
 
-部署为系统守护进程后，bridge 开机自启、崩溃自动重启。
-详见：[references/imsg-bridge-launchagent.md](references/imsg-bridge-launchagent.md)
+**2026-05-30 起不推荐使用 LaunchAgent。**
+
+LaunchAgent 通过 `launchd` 启动 bridge → **不继承 Terminal.app 的 FDA** → `imsg rpc` 的 `send` 方法因无法访问 `chat.db` 返回 `authorization denied (code: 23)`，即使走 AppleScript transport 也无法获取 guid 确认。
+
+详见：[LaunchAgent 部署实战记录](references/hermes/launchagent-deployment-record.md)（含事故复盘与结论）。
+
+**替代方案**：见下方 [自动化集成](#自动化集成) 中的自包含模式。
 
 ## 自动化集成
 
-基本模式：检测 bridge → 发送 → 判断结果。示例：
+### 推荐：自包含模式（一次工具调用完成全部工作）
+
+把 bridge 检测 → 自动启动 → 发送 → 响应判断**全部内嵌到一个 Python 脚本中**，单一 `execute_code` 调用完成。
+
+**为什么这样做**：部分 LLM 模型在长 prompt 末尾会跳过多步骤串行指令（已验证：`bytedance/doubao-seed-2.0-pro` 在 520 行 prompt 末尾的 "Step 1（terminal 检测/启动）→ Step 2（execute_code 发送）" 被连续多日跳过，Step 1 从未执行）。将 auto-start 嵌入 send 代码内部，消除了对 LLM 的串行执行依赖。
+
+```python
+import socket, json, time, subprocess
+
+def send_imessage(to, text):
+    """发送 iMessage，内部处理 bridge 自动启动"""
+
+    for attempt in range(2):
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.settimeout(10)
+            s.connect(('127.0.0.1', 8899))
+            s.sendall((json.dumps({
+                'jsonrpc': '2.0', 'id': '1', 'method': 'send',
+                'params': {'to': to, 'text': text}
+            }) + '\n').encode())
+            time.sleep(2)
+            try:
+                resp = s.recv(4096).decode()
+                s.close()
+                return resp
+            except socket.timeout:
+                s.close()
+                return 'TIMEOUT'
+        except (ConnectionRefusedError, OSError):
+            if attempt == 0:
+                # 自动启动 bridge：open .command 继承 Terminal.app FDA
+                # 注意：不能用 tmux new-session -d（Hermes 会拦截），必须用 open
+                cmd_path = '<SKILL_DIR>/references/imsg-bridge.command'
+                subprocess.run(['open', cmd_path], check=False)
+                # 轮询等待 bridge 就绪（open 异步 + Terminal.app 冷启动 ≥3s，固定 sleep 不够）
+                ready = False
+                for i in range(15):
+                    time.sleep(1)
+                    try:
+                        test = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                        test.settimeout(2)
+                        test.connect(('127.0.0.1', 8899))
+                        test.close()
+                        ready = True
+                        break
+                    except (ConnectionRefusedError, OSError):
+                        continue
+                if not ready:
+                    return 'BRIDGE_START_FAILED'
+            else:
+                return 'BRIDGE_START_FAILED'
+
+result = send_imessage('recipient@example.com', '消息内容')
+print(result)
+```
+
+**响应判断：**
+- 含 `"guid"` → ✅ 数据库级送达确认
+- 含 `"ok"` 无 `"guid"` / `TIMEOUT` → ⚠️ 已提交未确认，严禁重试
+- `BRIDGE_START_FAILED` / 含 `"error"` → bridge 自动启动也失败了，报告失败不重试
+
+### 旧版（分步模式，仅交互式场景可用）
+
+仅当你在交互式聊天中手动操作且能记住串行步骤时使用：
 
 ```bash
 # Step 1: 确保 bridge 在运行（幂等）
@@ -324,8 +407,7 @@ tmux has-session -t imsg-bridge 2>/dev/null || {
 # Step 2: Python socket 发送（完整代码见上方"发送消息"）
 ```
 
-> **Hermes Agent 用户**：请参阅 [`references/hermes/hermes-integration.md`](references/hermes/hermes-integration.md)
-> 了解 Hermes 环境下的特殊注意事项（安全策略、Cron 集成等）。
+> ⚠️ **自动化/Cron 场景必须用自包含模式**。分步模式在自动化中不可靠——LLM 可能跳过 Step 1。
 
 ## 参考
 
@@ -337,4 +419,8 @@ tmux has-session -t imsg-bridge 2>/dev/null || {
 - [LaunchAgent 部署指南](references/imsg-bridge-launchagent.md)
 - [Hermes Agent 集成指南](references/hermes/hermes-integration.md)
 - [Hermes Cron 发送模式](references/hermes/cron-delivery-pattern.md)
+- [Hermes `open` 命令验证](references/hermes/open-command-verification.md) — 实测确认 `open .command` 在 Hermes 中可用
+- [Bridge 启动竞态条件分析](references/hermes/bridge-startup-race-condition.md) — 2026-05-31 事故复盘：`time.sleep(3)` 不可靠，必须用主动轮询
+- [Hermes Skills Hub 发布经验](references/hermes-hub-publishing.md) — 发布流程、安全扫描机制及替代方案
+- [LaunchAgent 部署实战记录](references/hermes/launchagent-deployment-record.md) — 2026-05-28 实战：Cron 推送失败 → LaunchAgent + FDA 分析
 - [群聊 chat_id 查询脚本](scripts/list-group-chats.py) — 一键列出所有群组及 chat_id

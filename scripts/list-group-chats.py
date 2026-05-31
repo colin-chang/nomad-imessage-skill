@@ -34,7 +34,7 @@ try:
     resp = rpc('chats.list', {'limit': 50})
 except ConnectionRefusedError:
     print("❌ imsg bridge 未运行。请先启动：")
-    print("   open ~/.hermes/skills/custom/nomad-imessage/references/imsg-bridge.command")
+    print("   open <SKILL_DIR>/references/imsg-bridge.command")
     sys.exit(1)
 
 if 'error' in resp:
