@@ -54,8 +54,8 @@ brew install steipete/tap/imsg
 open references/imsg-bridge.command
 ```
 
-> **推荐**：部署为 LaunchAgent 实现开机自启。
-> 详见 [references/imsg-bridge-launchagent.md](references/imsg-bridge-launchagent.md)
+bridge 以 tmux 后台会话形式运行——关闭终端窗口不会中断。
+重启只需再次执行相同命令（幂等操作）。
 
 ### 发送消息
 
@@ -139,11 +139,39 @@ macOS 的 `nc` 在读取完 stdin EOF 后立即关闭连接，JSON-RPC 响应被
 
 | 文档 | 说明 |
 |------|------|
-| [SKILL.md](SKILL.md) | 完整参考（bridge 管理、故障排查） |
-| [FDA Bridge 原理](references/imessage-fda-bridge.md) | FDA 继承机制原理 |
-| [自动化能力调研](references/imessage-automation-research.md) | iMessage 自动化的能力边界 |
-| [LaunchAgent 部署](references/imsg-bridge-launchagent.md) | 系统守护进程部署 |
-| [调试指南](references/send-debugging-guide.md) | 常见问题排查 |
+| [SKILL.md](SKILL.md) | 完整参考（bridge 管理、所有 JSON-RPC 方法、自动化模式） |
+
+## 故障排查
+
+### Shell 运算符优先级陷阱
+
+```bash
+# ❌ 错误：&& 和 || 优先级相同（左结合）
+tmux has-session || open bridge.command && sleep 2 && python3 send.py
+# Shell 实际执行：(tmux has-session || open bridge.command) && sleep 2 && python3 send.py
+# 本意是：如果会话已存在就跳过 open。但 shell 无论如何都会执行 sleep+send。
+
+# ✅ 正确：检测和操作分成两步
+tmux has-session -t imsg-bridge 2>/dev/null || open references/imsg-bridge.command
+python3 send.py
+```
+
+### Bridge 在运行但无响应？
+
+按顺序排查：
+
+```bash
+pgrep -f "imsg rpc"          # 1. 进程是否存活？
+lsof -i :8899                # 2. 端口是否在监听？
+tail -f /tmp/imsg-bridge.log # 3. 日志里有什么？
+```
+
+| 症状 | 原因 | 解决 |
+|------|------|------|
+| `permission denied (code: 23)` | FDA 未授予 | 将 Terminal.app 加入完全磁盘访问权限 |
+| `socat: command not found` | socat 未安装 | `brew install socat` |
+| `imsg: command not found` | imsg 未安装 | `brew install steipete/tap/imsg` |
+| `pgrep` 无结果 | tmux 会话被杀 | `open references/imsg-bridge.command` |
 
 ## 安全性
 

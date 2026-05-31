@@ -54,8 +54,8 @@ Add `/System/Applications/Utilities/Terminal.app`
 open references/imsg-bridge.command
 ```
 
-> **Recommended**: Deploy as a LaunchAgent for auto-start on boot.
-> See [references/imsg-bridge-launchagent.md](references/imsg-bridge-launchagent.md)
+The bridge runs as a tmux background session — it survives terminal close.
+To restart it, just run the same command again (it's idempotent).
 
 ### Send a Message
 
@@ -143,11 +143,39 @@ but the message was already sent. Then you retry. Now the recipient has duplicat
 
 | Document | Description |
 |----------|-------------|
-| [SKILL.md](SKILL.md) | Full reference (bridge management, troubleshooting) |
-| [FDA Bridge Principles](references/imessage-fda-bridge.md) | How FDA inheritance works |
-| [Automation Capabilities](references/imessage-automation-research.md) | What's possible with iMessage automation |
-| [LaunchAgent Setup](references/imsg-bridge-launchagent.md) | Deploy as a system daemon |
-| [Debugging Guide](references/send-debugging-guide.md) | Common issues and solutions |
+| [SKILL.md](SKILL.md) | Full reference (bridge management, all JSON-RPC methods, automation patterns) |
+
+## Troubleshooting
+
+### Shell operator precedence trap
+
+```bash
+# ❌ BUG: && and || have equal precedence (left-associative)
+tmux has-session || open bridge.command && sleep 2 && python3 send.py
+# Shell actually runs: (tmux has-session || open bridge.command) && sleep 2 && python3 send.py
+# The intent was: if session exists, skip open. But shell runs sleep+send regardless.
+
+# ✅ Solution: separate detection from action
+tmux has-session -t imsg-bridge 2>/dev/null || open references/imsg-bridge.command
+python3 send.py
+```
+
+### Bridge is running but not responding?
+
+Run these diagnostics in order:
+
+```bash
+pgrep -f "imsg rpc"          # 1. Is the process alive?
+lsof -i :8899                # 2. Is the port listening?
+tail -f /tmp/imsg-bridge.log # 3. What's in the logs?
+```
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| `permission denied (code: 23)` | FDA not granted | Add Terminal.app to Full Disk Access |
+| `socat: command not found` | socat not installed | `brew install socat` |
+| `imsg: command not found` | imsg not installed | `brew install steipete/tap/imsg` |
+| No `pgrep` result | tmux session killed | `open references/imsg-bridge.command` |
 
 ## Security
 
